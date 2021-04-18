@@ -24,10 +24,10 @@ You can add more gather rate rulesets in the plugin configuration, and the plugi
 
 - **Pickups:** Based on the player picking up the resource.
   - Examples: Wood, sulfur, hemp plants, crude oil barrels, as well as player-planted items,
-- **Dispensers:** Based on the player using the mining tool.
-  - Examples: Stone nodes, trees, logs, driftwood, corpses, helicopter debris,
+- **Dispensers:** Based on the player using the tool (pickaxe, axe, etc.).
+  - Examples: Stone nodes, trees, logs, driftwood, corpses, helicopter debris.
 - **Player-owned Mining Quarries and Pump Jacks:** Based on the permissions of the owner.
-  - Note: These are only possible via plugins as they are no longer in the vanilla game.
+  - Note: These deployables are no longer available in the vanilla game, but they can be made available via plugins.
 - **Monument Mining Quarries and Pump Jacks:** Based on the player who last started the engine.
 - **Excavators:** Based on the player who last selected a resource before the excavator arm started moving.
 
@@ -79,43 +79,83 @@ Default configuration:
     - Example:
       ```json
       "DispenserRateOverrides": {
-        "corn.entity": {
-          "corn": 50.0,
-          "seed.corn": 5.0,
+        "miningquarry_static": {
+          "stones": 50.0,
+          "metal.ore": 50.0,
         },
       }
       ```
 
-### Example: Reduce seed spam
+### Config example
 
-This example uses a baseline 10x multiplier for all types of resource gathering, but overrides seed yields to be vanilla rates.
+The example config below serves to indicate the various ways you could configure rulesets. This example would generate the following permissions:
+
+- `gatherrates.ruleset.10x_with_50x_wood_25x_stone`
+  - 10x multiplier for all resources from any dispenser, with the following exceptions
+  - 50x multiplier for wood from any dispenser
+  - 25x multiplier for stone from any dispenser
+- `gatherrates.ruleset.10x_with_50x_monument_rates`
+  - 10x rates for all resources from any dispenser
+  - 50x rates for Mining Quarries, Pump Jacks and Excavators
+    - Includes to both the player-owned ones and the ones at monuments since both entity types are specified
+- `gatherrates.ruleset.10x_with_50x_player_plant_rates`
+  - 10x rates for all resources from any dispenser, with the following exceptions
+  - 50x rates for resources harvested from player-owned plants
+    - Does not include wild plants which use different entity names like `hemp-collectable`, so those will still use 10x
+    - Note: The rate is determined based on the player harvesting the plant, not the player who planted it
+  - 1x rates for seeds harvested from plants
+    - Applies to both player-owned plants and wild plants since this is declared under `ItemRateOverrides` which does not specify the dispenser type
+    - Note: This plugin does not affect the rate at which seeds are obtained by eating plants
 
 ```json
 {
   "GatherRateRulesets": [
     {
-      "Name": "10x",
+      "Name": "10x_with_50x_wood_25x_stone",
+      "DefaultRate": 10.0,
+      "ItemRateOverrides": {
+        "wood": 50.0,
+        "stone": 25.0
+      }
+    },
+    {
+      "Name": "10x_with_50x_monument_rates",
+      "DefaultRate": 10.0,
+      "DispenserRateOverrides": {
+        "miningquarry_static": {
+          "stones": 50.0,
+          "sulfur.ore": 50.0,
+          "metal.ore": 50.0,
+          "hq.metal.ore": 50.0
+        },
+        "mining_quarry": {
+          "stones": 50.0,
+          "sulfur.ore": 50.0,
+          "metal.ore": 50.0,
+          "hq.metal.ore": 50.0
+        },
+        "pumpjack-static": {
+          "crude.oil": 50.0
+        },
+        "mining.pumpjack": {
+          "crude.oil": 50.0
+        },
+        "excavator_yaw": {
+          "stones": 50.0,
+          "sulfur.ore": 50.0,
+          "metal.ore": 50.0,
+          "hq.metal.ore": 50.0
+        }
+      }
+    },
+    {
+      "Name": "10x_with_50x_player_plant_rates",
       "DefaultRate": 10.0,
       "ItemRateOverrides": {
         "seed.corn": 1.0,
         "seed.hemp": 1.0,
         "seed.pumpkin": 1.0
-      }
-    }
-  ]
-}
-```
-
-### Example: Boost player-grown plant yields
-
-This example uses a baseline 10x multiplier for all types of resource gathering, but overrides yields for player-grown plants to use a 50x multiplier. This does not apply to wild plants since those use different entity short names like `hemp-collectable`.
-
-```json
-{
-  "GatherRateRulesets": [
-    {
-      "Name": "10x",
-      "DefaultRate": 10.0,
+      },
       "DispenserRateOverrides": {
         "corn.entity": {
           "corn": 50.0
@@ -146,64 +186,6 @@ This example uses a baseline 10x multiplier for all types of resource gathering,
         },
         "yellow_berry.entity": {
           "yellow.berry": 50.0
-        }
-      }
-    }
-  ]
-}
-```
-
-### Example: Boost Excavator rates
-
-This example uses a baseline 10x multiplier for all types of resource gathering, but overrides Excavators to yield 50x for all resource types.
-
-```json
-{
-  "GatherRateRulesets": [
-    {
-      "Name": "10x",
-      "DefaultRate": 10.0,
-      "DispenserRateOverrides": {
-        "excavator_yaw": {
-          "stones": 50.0,
-          "sulfur.ore": 50.0,
-          "metal.ore": 50.0,
-          "hq.metal.ore": 50.0
-        }
-      }
-    }
-  ]
-}
-```
-
-### Example: Boost Mining Quarry & Pump Jack rates
-
-This example uses a baseline 10x multiplier for all types of resource gathering, but overrides both Mining Quarries and Pump Jacks to yield 50x for all resource types. This applies to both player-owned and monument dispensers since both entity types are specified.
-
-```json
-{
-  "GatherRateRulesets": [
-    {
-      "Name": "10x",
-      "DefaultRate": 10.0,
-      "DispenserRateOverrides": {
-        "miningquarry_static": {
-          "stones": 50.0,
-          "sulfur.ore": 50.0,
-          "metal.ore": 50.0,
-          "hq.metal.ore": 50.0,
-        },
-        "mining_quarry": {
-          "stones": 50.0,
-          "sulfur.ore": 50.0,
-          "metal.ore": 50.0,
-          "hq.metal.ore": 50.0,
-        },
-        "pumpjack-static": {
-          "crude.oil": 50.0
-        },
-        "mining.pumpjack": {
-          "crude.oil": 50.0
         }
       }
     }
