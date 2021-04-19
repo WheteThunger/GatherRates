@@ -6,6 +6,10 @@
 
 This plugin only alters gather rates, **not** smelt rates or loot rates.
 
+## Commands
+
+- `gatherrates.listdispensers` -- Lists short prefab names for all valid dispensers. Only allowed by server admins or in the server console.
+
 ## Permissions
 
 ### Rulesets

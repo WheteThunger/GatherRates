@@ -5,6 +5,7 @@ using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace Oxide.Plugins
 {
@@ -167,6 +168,25 @@ namespace Oxide.Plugins
                 return;
 
             _pluginData.ExcavatorStarters[excavatorArm.net.ID] = player.UserIDString;
+        }
+
+        #endregion
+
+        #region Commands
+
+        [Command("gatherrates.listdispensers")]
+        private void CommandDispensers(IPlayer player)
+        {
+            if (!player.IsServer && !player.IsAdmin)
+                return;
+
+            var dispenserShortNames = GetValidResourceDispensers();
+            var sb = new StringBuilder();
+
+            foreach (var shortName in dispenserShortNames)
+                sb.AppendLine(shortName);
+
+            player.Reply(sb.ToString());
         }
 
         #endregion
