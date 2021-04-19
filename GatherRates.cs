@@ -508,32 +508,5 @@ namespace Oxide.Plugins
         }
 
         #endregion
-
-        #region Localization
-
-        private void ReplyToPlayer(IPlayer player, string messageName, params object[] args) =>
-            player.Reply(string.Format(GetMessage(player, messageName), args));
-
-        private void ChatMessage(BasePlayer player, string messageName, params object[] args) =>
-            player.ChatMessage(string.Format(GetMessage(player.IPlayer, messageName), args));
-
-        private string GetMessage(IPlayer player, string messageName, params object[] args) =>
-            GetMessage(player.Id, messageName, args);
-
-        private string GetMessage(string playerId, string messageName, params object[] args)
-        {
-            var message = lang.GetMessage(messageName, this, playerId);
-            return args.Length > 0 ? string.Format(message, args) : message;
-        }
-
-        protected override void LoadDefaultMessages()
-        {
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-
-            }, this, "en");
-        }
-
-        #endregion
     }
 }
