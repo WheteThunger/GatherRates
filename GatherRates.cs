@@ -56,39 +56,101 @@ namespace Oxide.Plugins
             _pluginData = StoredData.Clear();
         }
 
-        private void OnGrowableGathered(GrowableEntity growable, Item item, BasePlayer player) =>
+        private void OnGrowableGathered(GrowableEntity growable, Item item, BasePlayer player)
+        {
             ProcessGather(growable, item, player);
 
-        private void OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item) =>
+            if (item.amount < 1)
+            {
+                NextTick(() =>
+                {
+                    if (item.amount < 1)
+                    {
+                        item.RemoveFromContainer();
+                        item.Remove();
+                    }
+                });
+            }
+        }
+
+        private bool? OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)
+        {
+            ProcessGather(dispenser.baseEntity, item, player);
+            if (item.amount < 1)
+                return false;
+
+            return null;
+        }
+
+        private void OnDispenserBonus(ResourceDispenser dispenser, BasePlayer player, Item item)
+        {
             ProcessGather(dispenser.baseEntity, item, player);
 
-        private void OnDispenserBonus(ResourceDispenser dispenser, BasePlayer player, Item item) =>
-            ProcessGather(dispenser.baseEntity, item, player);
+            if (item.amount < 1)
+            {
+                NextTick(() =>
+                {
+                    if (item.amount < 1)
+                    {
+                        item.RemoveFromContainer();
+                        item.Remove();
+                    }
+                });
+            }
+        }
 
-        private void OnCollectiblePickup(Item item, BasePlayer player, CollectibleEntity entity) =>
+        private void OnCollectiblePickup(Item item, BasePlayer player, CollectibleEntity entity)
+        {
             ProcessGather(entity, item, player);
 
-        private void OnQuarryGather(MiningQuarry quarry, Item item)
+            if (item.amount < 1)
+            {
+               NextTick(() =>
+                {
+                    if (item.amount < 1)
+                    {
+                        item.RemoveFromContainer();
+                        item.Remove();
+                    }
+                });
+            }
+        }
+
+        private bool? OnQuarryGather(MiningQuarry quarry, Item item)
         {
             string userId;
             if (quarry.OwnerID == 0)
             {
                 if (!_pluginData.QuarryStarters.TryGetValue(quarry.net.ID, out userId))
-                    return;
+                    return null;
             }
             else
                 userId = quarry.OwnerID.ToString();
 
             ProcessGather(quarry, item, userId);
+            if (item.amount < 1)
+            {
+                // The hook is already coded to remove the item if returning non-null.
+                return false;
+            }
+
+            return null;
         }
 
-        private void OnExcavatorGather(ExcavatorArm excavator, Item item)
+        private bool? OnExcavatorGather(ExcavatorArm excavator, Item item)
         {
             string userId;
             if (!_pluginData.ExcavatorStarters.TryGetValue(excavator.net.ID, out userId))
-                return;
+                return null;
 
             ProcessGather(excavator, item, userId);
+            if (item.amount < 1)
+            {
+                item.Remove();
+                return false;
+            }
+
+            return null;
         }
 
         private void OnQuarryToggled(MiningQuarry miningQuarry, BasePlayer player)
