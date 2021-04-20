@@ -156,9 +156,16 @@ The example config below serves to indicate the various ways you could configure
       "Name": "10x_with_50x_player_plant_rates",
       "DefaultRate": 10.0,
       "ItemRateOverrides": {
+        "seed.black.berry": 1.0,
+        "seed.blue.berry": 1.0,
         "seed.corn": 1.0,
+        "seed.green.berry": 1.0,
         "seed.hemp": 1.0,
-        "seed.pumpkin": 1.0
+        "seed.potato": 1.0,
+        "seed.pumpkin": 1.0,
+        "seed.red.berry": 1.0,
+        "seed.white.berry": 1.0,
+        "seed.yellow.berry": 1.0
       },
       "DispenserRateOverrides": {
         "corn.entity": {
