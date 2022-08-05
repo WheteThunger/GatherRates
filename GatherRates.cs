@@ -6,10 +6,12 @@ using Oxide.Core.Libraries.Covalence;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using UnityEngine;
+using static BaseEntity;
 
 namespace Oxide.Plugins
 {
-    [Info("Gather Rates", "WhiteThunder", "0.1.0")]
+    [Info("Gather Rates", "WhiteThunder", "0.1.1")]
     [Description("Allows altering gather rates based on player permission.")]
     internal class GatherRates : CovalencePlugin
     {
@@ -21,6 +23,8 @@ namespace Oxide.Plugins
         private const string PermissionRulesetFormat = "gatherrates.ruleset.{0}";
 
         private StoredData _pluginData;
+
+        private object False = false;
 
         #endregion
 
@@ -74,11 +78,11 @@ namespace Oxide.Plugins
             }
         }
 
-        private bool? OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)
+        private object OnDispenserGather(ResourceDispenser dispenser, BasePlayer player, Item item)
         {
             ProcessGather(dispenser.baseEntity, item, player);
             if (item.amount < 1)
-                return false;
+                return False;
 
             return null;
         }
@@ -100,24 +104,64 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnCollectiblePickup(Item item, BasePlayer player, CollectibleEntity entity)
+        private object OnCollectiblePickup(CollectibleEntity entity, BasePlayer player)
         {
-            ProcessGather(entity, item, player);
-
-            if (item.amount < 1)
+            if (entity.IsDestroyed)
             {
-               NextTick(() =>
-                {
-                    if (item.amount < 1)
-                    {
-                        item.RemoveFromContainer();
-                        item.Remove();
-                    }
-                });
+                // Another plugin probably handled this hook.
+                return null;
             }
+
+            var ruleset = GetPlayerRuleset(player.UserIDString);
+            if (ruleset == null)
+                return null;
+
+            foreach (var itemAmount in entity.itemList)
+            {
+                var item = ItemManager.Create(itemAmount.itemDef, (int)itemAmount.amount);
+                if (item == null)
+                    continue;
+
+                var rate = ruleset.GetGatherRate(item.info, entity.ShortPrefabName);
+                if (rate != 1 && !MultiplyGatherRateWasBlocked(entity, item, player.UserIDString))
+                {
+                    item.amount = (int)(item.amount * rate);
+                }
+
+                if (item.amount <= 0)
+                {
+                    item.Remove();
+                    continue;
+                }
+
+                if (player != null)
+                {
+                    player.GiveItem(item, GiveItemReason.ResourceHarvested);
+                }
+                else
+                {
+                    item.Drop(entity.transform.position + Vector3.up * 0.5f, Vector3.up);
+                }
+            }
+
+            entity.itemList = null;
+
+            if (entity.pickupEffect.isValid)
+            {
+                Effect.server.Run(entity.pickupEffect.resourcePath, entity.transform.position, entity.transform.up);
+            }
+
+            RandomItemDispenser randomItemDispenser = PrefabAttribute.server.Find<RandomItemDispenser>(entity.prefabID);
+            if (randomItemDispenser != null)
+            {
+                randomItemDispenser.DistributeItems(player, entity.transform.position);
+            }
+
+            entity.Kill();
+            return False;
         }
 
-        private bool? OnQuarryGather(MiningQuarry quarry, Item item)
+        private object OnQuarryGather(MiningQuarry quarry, Item item)
         {
             string userId;
             if (quarry.OwnerID == 0)
@@ -132,13 +176,13 @@ namespace Oxide.Plugins
             if (item.amount < 1)
             {
                 // The hook is already coded to remove the item if returning non-null.
-                return false;
+                return False;
             }
 
             return null;
         }
 
-        private bool? OnExcavatorGather(ExcavatorArm excavator, Item item)
+        private object OnExcavatorGather(ExcavatorArm excavator, Item item)
         {
             string userId;
             if (!_pluginData.ExcavatorStarters.TryGetValue(excavator.net.ID, out userId))
@@ -148,7 +192,7 @@ namespace Oxide.Plugins
             if (item.amount < 1)
             {
                 item.Remove();
-                return false;
+                return False;
             }
 
             return null;
@@ -259,7 +303,7 @@ namespace Oxide.Plugins
             if (ruleset == null)
                 return;
 
-            var rate = ruleset.GetGatherRate(item, entity.ShortPrefabName);
+            var rate = ruleset.GetGatherRate(item.info, entity.ShortPrefabName);
             if (rate == 1 || MultiplyGatherRateWasBlocked(entity, item, userId))
                 return;
 
@@ -403,17 +447,17 @@ namespace Oxide.Plugins
             [JsonProperty("DispenserRateOverrides", DefaultValueHandling = DefaultValueHandling.Ignore)]
             public Dictionary<string, Dictionary<string, float>> DispenserRateOverrides = null;
 
-            public float GetGatherRate(Item item, string shortPrefabName)
+            public float GetGatherRate(ItemDefinition itemDefinition, string shortPrefabName)
             {
                 Dictionary<string, float> itemRates;
                 float rate;
                 if (DispenserRateOverrides != null
                     && DispenserRateOverrides.TryGetValue(shortPrefabName, out itemRates)
-                    && itemRates.TryGetValue(item.info.shortname, out rate))
+                    && itemRates.TryGetValue(itemDefinition.shortname, out rate))
                     return rate;
 
                 if (ItemRateOverrides != null
-                    && ItemRateOverrides.TryGetValue(item.info.shortname, out rate))
+                    && ItemRateOverrides.TryGetValue(itemDefinition.shortname, out rate))
                     return rate;
 
                 return DefaultRate;
