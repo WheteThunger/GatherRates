@@ -3,22 +3,23 @@ using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEngine;
 using static BaseEntity;
+using static RandomItemDispenser;
 
 namespace Oxide.Plugins
 {
-    [Info("Gather Rates", "WhiteThunder", "0.1.1")]
+    [Info("Gather Rates", "WhiteThunder", "0.2.0")]
     [Description("Allows altering gather rates based on player permission.")]
     internal class GatherRates : CovalencePlugin
     {
         #region Fields
 
-        private static GatherRates _pluginInstance;
-        private static Configuration _pluginConfig;
+        private Configuration _config;
 
         private const string PermissionRulesetFormat = "gatherrates.ruleset.{0}";
 
@@ -32,23 +33,18 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            _pluginInstance = this;
             _pluginData = StoredData.Load();
-
-            foreach (var ruleset in _pluginConfig.GatherRateRulesets)
-                permission.RegisterPermission(GetRulesetPermission(ruleset.Name), this);
+            _config.Init(this);
         }
 
         private void Unload()
         {
             OnServerSave();
-            _pluginConfig = null;
-            _pluginInstance = null;
         }
 
         private void OnServerInitialized()
         {
-            _pluginConfig.Validate();
+            _config.OnServerInitialized(this);
         }
 
         private void OnServerSave()
@@ -112,7 +108,7 @@ namespace Oxide.Plugins
                 return null;
             }
 
-            var ruleset = GetPlayerRuleset(player.UserIDString);
+            var ruleset = GetPlayerRuleset(player?.UserIDString);
             if (ruleset == null)
                 return null;
 
@@ -123,7 +119,7 @@ namespace Oxide.Plugins
                     continue;
 
                 var rate = ruleset.GetGatherRate(item.info, entity.ShortPrefabName);
-                if (rate != 1 && !MultiplyGatherRateWasBlocked(entity, item, player.UserIDString))
+                if (rate != 1 && !MultiplyGatherRateWasBlocked(entity, item.info, player?.UserIDString))
                 {
                     item.amount = (int)(item.amount * rate);
                 }
@@ -134,7 +130,7 @@ namespace Oxide.Plugins
                     continue;
                 }
 
-                if (player != null)
+                if ((object)player != null)
                 {
                     player.GiveItem(item, GiveItemReason.ResourceHarvested);
                 }
@@ -154,7 +150,7 @@ namespace Oxide.Plugins
             RandomItemDispenser randomItemDispenser = PrefabAttribute.server.Find<RandomItemDispenser>(entity.prefabID);
             if (randomItemDispenser != null)
             {
-                randomItemDispenser.DistributeItems(player, entity.transform.position);
+                DistributeRandomItems(entity, randomItemDispenser, player, entity.transform.position, ruleset);
             }
 
             entity.Kill();
@@ -170,7 +166,9 @@ namespace Oxide.Plugins
                     return null;
             }
             else
+            {
                 userId = quarry.OwnerID.ToString();
+            }
 
             ProcessGather(quarry, item, userId);
             if (item.amount < 1)
@@ -237,9 +235,9 @@ namespace Oxide.Plugins
 
         #region Helper Methods
 
-        private static bool MultiplyGatherRateWasBlocked(BaseEntity dispenser, Item item, string userId)
+        private static bool MultiplyGatherRateWasBlocked(BaseEntity dispenser, ItemDefinition itemDefinition, string userId)
         {
-            object hookResult = Interface.CallHook("OnGatherRateMultiply", dispenser, item, userId);
+            object hookResult = Interface.CallHook("OnGatherRateMultiply", dispenser, itemDefinition, userId);
             return hookResult is bool && (bool)hookResult == false;
         }
 
@@ -304,10 +302,54 @@ namespace Oxide.Plugins
                 return;
 
             var rate = ruleset.GetGatherRate(item.info, entity.ShortPrefabName);
-            if (rate == 1 || MultiplyGatherRateWasBlocked(entity, item, userId))
+            if (rate == 1 || MultiplyGatherRateWasBlocked(entity, item.info, userId))
                 return;
 
             item.amount = (int)(item.amount * rate);
+        }
+
+        private bool TryRandomAward(RandomItemDispenser randomItemDispenser, RandomItemChance itemChance, BasePlayer player, Vector3 distributorPosition, float rate)
+        {
+            if (Interface.CallHook("OnRandomItemAward", randomItemDispenser, itemChance, player, distributorPosition) != null)
+                return false;
+
+            if (UnityEngine.Random.Range(0f, 1f) > itemChance.Chance)
+                return false;
+
+            var amount = (int)(itemChance.Amount * rate);
+            if (amount <= 0)
+                return false;
+
+            var item = ItemManager.Create(itemChance.Item, amount);
+            if (item == null)
+                return false;
+
+            if ((object)player != null)
+            {
+                player.GiveItem(item, GiveItemReason.ResourceHarvested);
+            }
+            else
+            {
+                item.Drop(distributorPosition + Vector3.up * 0.5f, Vector3.up);
+            }
+
+            return true;
+        }
+
+        private void DistributeRandomItems(BaseEntity dispenser, RandomItemDispenser randomItemDispenser, BasePlayer player, Vector3 distributorPosition, GatherRateRuleset ruleset)
+        {
+            foreach (var itemChance in randomItemDispenser.Chances)
+            {
+                // Note: One minor problem is that if the hook was blocked, we don't know if the item was awarded, so extra bonus items may be awarded.
+                if (MultiplyGatherRateWasBlocked(dispenser, itemChance.Item, player?.UserIDString))
+                    continue;
+
+                var rate = ruleset.GetGatherRate(itemChance.Item, dispenser.ShortPrefabName);
+
+                bool flag = TryRandomAward(randomItemDispenser, itemChance, player, distributorPosition, rate);
+                if (randomItemDispenser.OnlyAwardOne && flag)
+                    break;
+            }
         }
 
         #endregion
@@ -323,13 +365,13 @@ namespace Oxide.Plugins
             public Dictionary<uint, string> ExcavatorStarters = new Dictionary<uint, string>();
 
             public static StoredData Load() =>
-                Interface.Oxide.DataFileSystem.ReadObject<StoredData>(_pluginInstance.Name) ?? new StoredData();
+                Interface.Oxide.DataFileSystem.ReadObject<StoredData>(nameof(GatherRates)) ?? new StoredData();
 
             public static StoredData Clear() => new StoredData().Save();
 
             public StoredData Save()
             {
-                Interface.Oxide.DataFileSystem.WriteObject(_pluginInstance.Name, this);
+                Interface.Oxide.DataFileSystem.WriteObject(nameof(GatherRates), this);
                 return this;
             }
         }
@@ -340,7 +382,10 @@ namespace Oxide.Plugins
 
         private GatherRateRuleset GetPlayerRuleset(string userId)
         {
-            var rulesets = _pluginConfig.GatherRateRulesets;
+            if (userId == null)
+                return _config.DefaultRuleset;
+
+            var rulesets = _config.GatherRateRulesets;
 
             if (userId == string.Empty || rulesets == null)
                 return null;
@@ -353,11 +398,94 @@ namespace Oxide.Plugins
                     return ruleset;
             }
 
-            return null;
+            return _config.DefaultRuleset;
+        }
+
+        private class GatherRateRuleset
+        {
+            [JsonProperty("Name", DefaultValueHandling = DefaultValueHandling.Ignore)]
+            public string Name;
+
+            [JsonProperty("DefaultRate")]
+            public float DefaultRate = 1;
+
+            [JsonProperty("ItemRateOverrides", DefaultValueHandling = DefaultValueHandling.Ignore)]
+            public Dictionary<string, float> ItemRateOverrides = null;
+
+            [JsonProperty("DispenserRateOverrides", DefaultValueHandling = DefaultValueHandling.Ignore)]
+            public Dictionary<string, Dictionary<string, float>> DispenserRateOverrides = null;
+
+            public void Init(GatherRates plugin)
+            {
+                if (!string.IsNullOrWhiteSpace(Name))
+                {
+                    plugin.permission.RegisterPermission(GetRulesetPermission(Name), plugin);
+                }
+
+                if (ItemRateOverrides != null)
+                {
+                    foreach (var itemShortName in ItemRateOverrides.Keys)
+                    {
+                        if (ItemManager.FindItemDefinition(itemShortName) == null)
+                        {
+                            plugin.LogWarning($"Invalid item short name in config: '{itemShortName}'");
+                        }
+                    }
+                }
+
+                if (DispenserRateOverrides != null)
+                {
+                    foreach (var entry in DispenserRateOverrides)
+                    {
+                        var itemRates = entry.Value;
+                        foreach (var itemShortName in itemRates.Keys)
+                        {
+                            if (ItemManager.FindItemDefinition(itemShortName) == null)
+                            {
+                                plugin.LogWarning($"Invalid item short name in config: '{itemShortName}'");
+                            }
+                        }
+                    }
+                }
+            }
+
+            public void OnServerInitialized(GatherRates plugin, HashSet<string> validDispensers)
+            {
+                if (DispenserRateOverrides != null)
+                {
+                    foreach (var entry in DispenserRateOverrides)
+                    {
+                        var entityShortName = entry.Key;
+                        if (!validDispensers.Contains(entry.Key))
+                        {
+                            plugin.LogWarning($"Invalid entity short name in config: '{entityShortName}'");
+                        }
+                    }
+                }
+            }
+
+            public float GetGatherRate(ItemDefinition itemDefinition, string shortPrefabName)
+            {
+                Dictionary<string, float> itemRates;
+                float rate;
+                if (DispenserRateOverrides != null
+                    && DispenserRateOverrides.TryGetValue(shortPrefabName, out itemRates)
+                    && itemRates.TryGetValue(itemDefinition.shortname, out rate))
+                    return rate;
+
+                if (ItemRateOverrides != null
+                    && ItemRateOverrides.TryGetValue(itemDefinition.shortname, out rate))
+                    return rate;
+
+                return DefaultRate;
+            }
         }
 
         private class Configuration : SerializableConfiguration
         {
+            [JsonProperty("DefaultRuleset")]
+            public GatherRateRuleset DefaultRuleset = new GatherRateRuleset();
+
             [JsonProperty("GatherRateRulesets")]
             public GatherRateRuleset[] GatherRateRulesets = new GatherRateRuleset[]
             {
@@ -388,79 +516,32 @@ namespace Oxide.Plugins
                 }
             };
 
-            public void Validate()
+            public void Init(GatherRates plugin)
             {
-                var dispensers = GetValidResourceDispensers();
+                DefaultRuleset.Init(plugin);
 
-                if (GatherRateRulesets == null)
-                    return;
-
-                foreach (var ruleset in GatherRateRulesets)
+                if (GatherRateRulesets != null)
                 {
-                    if (ruleset.ItemRateOverrides != null)
+                    foreach (var ruleset in GatherRateRulesets)
                     {
-                        foreach (var itemShortName in ruleset.ItemRateOverrides.Keys)
-                        {
-                            if (ItemManager.FindItemDefinition(itemShortName) == null)
-                            {
-                                _pluginInstance.LogWarning($"Invalid item short name in config: '{itemShortName}'");
-                            }
-                        }
-                    }
-
-                    if (ruleset.DispenserRateOverrides != null)
-                    {
-                        foreach (var entry in ruleset.DispenserRateOverrides)
-                        {
-                            var entityShortName = entry.Key;
-                            if (!dispensers.Contains(entry.Key))
-                            {
-                                _pluginInstance.LogWarning($"Invalid entity short name in config: '{entityShortName}'");
-                                continue;
-                            }
-
-                            var itemRates = entry.Value;
-                            foreach (var itemShortName in itemRates.Keys)
-                            {
-                                if (ItemManager.FindItemDefinition(itemShortName) == null)
-                                {
-                                    _pluginInstance.LogWarning($"Invalid item short name in config: '{itemShortName}'");
-                                }
-                            }
-                        }
+                        ruleset.Init(plugin);
                     }
                 }
             }
-        }
 
-        private class GatherRateRuleset
-        {
-            [JsonProperty("Name")]
-            public string Name;
-
-            [JsonProperty("DefaultRate")]
-            public float DefaultRate = 1;
-
-            [JsonProperty("ItemRateOverrides", DefaultValueHandling = DefaultValueHandling.Ignore)]
-            public Dictionary<string, float> ItemRateOverrides = null;
-
-            [JsonProperty("DispenserRateOverrides", DefaultValueHandling = DefaultValueHandling.Ignore)]
-            public Dictionary<string, Dictionary<string, float>> DispenserRateOverrides = null;
-
-            public float GetGatherRate(ItemDefinition itemDefinition, string shortPrefabName)
+            public void OnServerInitialized(GatherRates plugin)
             {
-                Dictionary<string, float> itemRates;
-                float rate;
-                if (DispenserRateOverrides != null
-                    && DispenserRateOverrides.TryGetValue(shortPrefabName, out itemRates)
-                    && itemRates.TryGetValue(itemDefinition.shortname, out rate))
-                    return rate;
+                var validDispensers = GetValidResourceDispensers();
 
-                if (ItemRateOverrides != null
-                    && ItemRateOverrides.TryGetValue(itemDefinition.shortname, out rate))
-                    return rate;
+                DefaultRuleset.OnServerInitialized(plugin, validDispensers);
 
-                return DefaultRate;
+                if (GatherRateRulesets != null)
+                {
+                    foreach (var ruleset in GatherRateRulesets)
+                    {
+                        ruleset.OnServerInitialized(plugin, validDispensers);
+                    }
+                }
             }
         }
 
@@ -539,27 +620,28 @@ namespace Oxide.Plugins
             return changed;
         }
 
-        protected override void LoadDefaultConfig() => _pluginConfig = GetDefaultConfig();
+        protected override void LoadDefaultConfig() => _config = GetDefaultConfig();
 
         protected override void LoadConfig()
         {
             base.LoadConfig();
             try
             {
-                _pluginConfig = Config.ReadObject<Configuration>();
-                if (_pluginConfig == null)
+                _config = Config.ReadObject<Configuration>();
+                if (_config == null)
                 {
                     throw new JsonException();
                 }
 
-                if (MaybeUpdateConfig(_pluginConfig))
+                if (MaybeUpdateConfig(_config))
                 {
                     LogWarning("Configuration appears to be outdated; updating and saving");
                     SaveConfig();
                 }
             }
-            catch
+            catch (Exception e)
             {
+                LogError(e.Message);
                 LogWarning($"Configuration file {Name}.json is invalid; using defaults");
                 LoadDefaultConfig();
             }
@@ -568,7 +650,7 @@ namespace Oxide.Plugins
         protected override void SaveConfig()
         {
             Log($"Configuration changes saved to {Name}.json");
-            Config.WriteObject(_pluginConfig, true);
+            Config.WriteObject(_config, true);
         }
 
         #endregion

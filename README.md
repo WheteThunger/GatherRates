@@ -41,6 +41,9 @@ Default configuration:
 
 ```json
 {
+  "DefaultRuleset": {
+    "DefaultRate": 1.0
+  },
   "GatherRateRulesets": [
     {
       "Name": "2x",
@@ -66,8 +69,7 @@ Default configuration:
 }
 ```
 
-- `GatherRateRulesets` -- List of rulesets that determine player gather rates. Each ruleset generates a separate permission which can be granted to players or groups to make the ruleset apply to them.
-  - `Name` -- Unique name used to generate a permission of the format `gatherrates.ruleset.<name>`.
+- `DefaultRuleset` -- Default ruleset that applies to all players and horses (horses can collect pickups). You can apply alternate rulesets to players with permission via the `GatherRateRulesets` section of the config.
   - `DefaultRate` -- Multiplier for all types of resource gathering, except for those overriden by `ItemRateOverrides` or `DispenserRateOverrides`.
   - `ItemRateOverrides` -- Mapping of item short names to gather rates, overriding `DefaultRate`.
     - Example:
@@ -79,7 +81,7 @@ Default configuration:
       }
       ```
   - `DispenserRateOverrides` -- Mapping of dispenser entity short names to sub-mappings of item short names to gather rates, overriding both `DefaultRate` and `ItemRateOverrides`. This allows you to override gather rates per resource, based on the dispenser the resource is coming from.
-    - Note: If you override rates for a dispenser that produces multiple items (e.g., `"metal.ore"` and `"hq.metal.ore"`), any items that you do not override will use the rates defined in `ItemRateOverrides` or `DefaultRate`. This allows you to only override specific combinations of dispensers and resources, without having to override them all.
+    - Note: If you override rates for a dispenser that produces multiple items (e.g., `"metal.ore"` and `"hq.metal.ore"`), any items that you do not override will use the rates defined in `ItemRateOverrides` or `DefaultRate`. This allows you to override only specific combinations of dispensers and resources, without needing to override them all.
     - Example:
       ```json
       "DispenserRateOverrides": {
@@ -89,6 +91,10 @@ Default configuration:
         },
       }
       ```
+- `GatherRateRulesets` -- List of rulesets that determine gather rates according to player permission. Each ruleset generates a separate permission which can be granted to players or groups to make the ruleset apply to them.
+  - `Name` -- Unique name used to generate a permission of the format `gatherrates.ruleset.<name>`.
+  - `ItemRateOverrides` -- See above.
+  - `DispenserRateOverrides` -- See above.
 
 ### Config example
 
@@ -113,6 +119,9 @@ The example config below serves to indicate the various ways you could configure
 
 ```json
 {
+  "DefaultRuleset": {
+    "DefaultRate": 1.0
+  },
   "GatherRateRulesets": [
     {
       "Name": "10x_with_50x_wood_25x_stone",
@@ -208,12 +217,12 @@ The example config below serves to indicate the various ways you could configure
 
 #### OnGatherRateMultiply
 
+```csharp
+bool? OnGatherRateMultiply(BaseEntity dispenser, ItemDefinition itemDefinition, string userId)
+```
+
 - Called when this plugin is about to multiply gather rate for a particular item.
 - Returning `false` will prevent the item amount from being multiplied.
 - Returning `null` will result in the default behavior.
-
-```csharp
-bool? OnGatherRateMultiply(BaseEntity dispenser, Item item, string userId)
-```
 
 The dispenser can be a collectible, corpse, node, tree, quarry, excavator, etc.
