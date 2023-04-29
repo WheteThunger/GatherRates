@@ -1,6 +1,5 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Newtonsoft.Json.Serialization;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using System;
@@ -13,7 +12,7 @@ using static RandomItemDispenser;
 
 namespace Oxide.Plugins
 {
-    [Info("Gather Rates", "WhiteThunder", "0.2.0")]
+    [Info("Gather Rates", "WhiteThunder", "0.2.1")]
     [Description("Allows altering gather rates based on player permission.")]
     internal class GatherRates : CovalencePlugin
     {
@@ -162,7 +161,7 @@ namespace Oxide.Plugins
             string userId;
             if (quarry.OwnerID == 0)
             {
-                if (!_pluginData.QuarryStarters.TryGetValue(quarry.net.ID, out userId))
+                if (!_pluginData.QuarryStarters.TryGetValue(quarry.net.ID.Value, out userId))
                     return null;
             }
             else
@@ -183,7 +182,7 @@ namespace Oxide.Plugins
         private object OnExcavatorGather(ExcavatorArm excavator, Item item)
         {
             string userId;
-            if (!_pluginData.ExcavatorStarters.TryGetValue(excavator.net.ID, out userId))
+            if (!_pluginData.ExcavatorStarters.TryGetValue(excavator.net.ID.Value, out userId))
                 return null;
 
             ProcessGather(excavator, item, userId);
@@ -201,7 +200,7 @@ namespace Oxide.Plugins
             if (!miningQuarry.IsOn())
                 return;
 
-            _pluginData.QuarryStarters[miningQuarry.net.ID] = player.UserIDString;
+            _pluginData.QuarryStarters[miningQuarry.net.ID.Value] = player.UserIDString;
         }
 
         private void OnExcavatorResourceSet(ExcavatorArm excavatorArm, string resourceName, BasePlayer player)
@@ -209,7 +208,7 @@ namespace Oxide.Plugins
             if (excavatorArm.IsOn())
                 return;
 
-            _pluginData.ExcavatorStarters[excavatorArm.net.ID] = player.UserIDString;
+            _pluginData.ExcavatorStarters[excavatorArm.net.ID.Value] = player.UserIDString;
         }
 
         #endregion
@@ -359,10 +358,10 @@ namespace Oxide.Plugins
         private class StoredData
         {
             [JsonProperty("QuarryStarters")]
-            public Dictionary<uint, string> QuarryStarters = new Dictionary<uint, string>();
+            public Dictionary<ulong, string> QuarryStarters = new Dictionary<ulong, string>();
 
             [JsonProperty("ExcavatorStarters")]
-            public Dictionary<uint, string> ExcavatorStarters = new Dictionary<uint, string>();
+            public Dictionary<ulong, string> ExcavatorStarters = new Dictionary<ulong, string>();
 
             public static StoredData Load() =>
                 Interface.Oxide.DataFileSystem.ReadObject<StoredData>(nameof(GatherRates)) ?? new StoredData();
